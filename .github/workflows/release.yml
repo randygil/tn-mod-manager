@@ -9,6 +9,10 @@ on:
 env:
   APP_NAME: mod-manager
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build:
     name: 🔨 Build for ${{ matrix.os }}
