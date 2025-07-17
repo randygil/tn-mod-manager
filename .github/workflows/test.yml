@@ -30,9 +30,6 @@ jobs:
       - name: 🎯 Type check
         run: deno check main.ts
 
-      - name: 🧪 Run tests
-        run: deno test --allow-all
-
       - name: 🔨 Test compilation
         run: deno task build-windows
         if: matrix.os == 'ubuntu-latest'

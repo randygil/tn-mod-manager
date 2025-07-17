@@ -51,7 +51,6 @@ Follow [Semantic Versioning](https://semver.org/):
 
 2. **GitHub Actions will automatically:**
    - Build for all platforms
-   - Run tests
    - Create release
    - Upload binaries
    - Generate release notes
