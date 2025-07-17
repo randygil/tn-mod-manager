@@ -1,0 +1,10 @@
+{
+  "modLoader": "forge",
+  "gameVersion": "1.20.1",
+  "mods": [
+    {
+      "name": "Quark",
+      "source": "modrinth"
+    }
+  ]
+}
