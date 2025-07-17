@@ -104,7 +104,7 @@ jobs:
           cp release-artifacts/mod-manager-macos-arm64/mod-manager-macos-arm64 release-assets/mod-manager-macos-arm64
 
           # Copy README to main directory
-          cp release-artifacts/mod-manager-windows-x64/README.txt release-assets/
+          cp release-artifacts/mod-manager-windows-x64.exe/README.txt release-assets/
 
           # Create SHA256 checksums
           cd release-assets
