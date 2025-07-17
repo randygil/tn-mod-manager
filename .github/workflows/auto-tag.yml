@@ -1,0 +1,110 @@
+name: 🏷️ Auto Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to tag (e.g., v1.0.0)"
+        required: true
+        type: string
+      create_release:
+        description: "Create release immediately"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  create-tag:
+    name: 🏷️ Create Tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history needed for tagging
+
+      - name: 🦕 Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: ✅ Validate version format
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: v1.0.0 or v1.0.0-beta"
+            exit 1
+          fi
+          echo "✅ Version format is valid: $VERSION"
+
+      - name: 🔍 Check if tag exists
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "❌ Tag $VERSION already exists!"
+            exit 1
+          fi
+          echo "✅ Tag $VERSION is available"
+
+      - name: 🧪 Run validation
+        run: |
+          echo "🔍 Running pre-tag validation..."
+          deno lint
+          deno check main.ts
+          echo "✅ Validation passed"
+
+      - name: 🔨 Test build
+        run: |
+          echo "🔨 Testing compilation..."
+          deno compile --allow-all --target x86_64-pc-windows-msvc --output test-build.exe main.ts
+          if [ ! -f "test-build.exe" ]; then
+            echo "❌ Build test failed"
+            exit 1
+          fi
+          rm test-build.exe
+          echo "✅ Build test passed"
+
+      - name: 🏷️ Create and push tag
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Create annotated tag with release info
+          git tag -a "$VERSION" -m "Release $VERSION
+
+          Auto-tagged by GitHub Actions
+          Commit: ${{ github.sha }}
+          Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+          🎮 Minecraft Mod Manager $VERSION
+
+          Built with ☕ and TypeScript"
+
+          # Push the tag
+          git push origin "$VERSION"
+
+          echo "✅ Tag $VERSION created and pushed"
+
+      - name: 🎉 Trigger release workflow
+        if: ${{ github.event.inputs.create_release == 'true' }}
+        run: |
+          echo "🚀 Release workflow will be triggered automatically by the tag push"
+          echo "🔗 Monitor the release at: ${{ github.server_url }}/${{ github.repository }}/actions"
+
+      - name: 📋 Summary
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          echo "🎯 Summary:"
+          echo "├── ✅ Tag created: $VERSION"
+          echo "├── 🔗 Tag URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/$VERSION"
+          if [[ "${{ github.event.inputs.create_release }}" == "true" ]]; then
+            echo "├── 🚀 Release workflow triggered"
+            echo "└── 📦 Binaries will be available shortly"
+          else
+            echo "└── ⏸️  Release workflow NOT triggered (manual trigger required)"
+          fi

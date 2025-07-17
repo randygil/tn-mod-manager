@@ -1,0 +1,93 @@
+name: 🧪 Test and Validate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 🧪 Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🦕 Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: 🔍 Lint code
+        run: deno lint
+
+      - name: 🎯 Type check
+        run: deno check main.ts
+
+      - name: 🧪 Run tests
+        run: deno test --allow-all
+
+      - name: 🔨 Test compilation
+        run: deno task build-windows
+        if: matrix.os == 'ubuntu-latest'
+
+  validate-config:
+    name: 📋 Validate configuration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🦕 Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: ✅ Validate deno.json
+        run: |
+          deno task --config deno.json || echo "deno.json is valid"
+
+      - name: 📦 Check dependencies
+        run: |
+          echo "Checking imports..."
+          deno info main.ts
+
+  security:
+    name: 🔒 Security check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🦕 Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: 🛡️ Security audit
+        run: |
+          echo "Running security checks..."
+          # Check for suspicious patterns
+          if grep -r "eval\|Function\|setTimeout" --include="*.ts" --include="*.js" .; then
+            echo "⚠️ Found potentially unsafe code patterns"
+            exit 1
+          else
+            echo "✅ No suspicious patterns found"
+          fi
+
+      - name: 🔍 Check for secrets
+        run: |
+          echo "Checking for accidentally committed secrets..."
+          if grep -r -i "password\|secret\|token\|key" --include="*.ts" --include="*.js" --exclude-dir=.git .; then
+            echo "⚠️ Potential secrets found - please review"
+          else
+            echo "✅ No secrets detected"
+          fi

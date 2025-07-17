@@ -1,0 +1,203 @@
+name: 🚀 Build and Release
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on version tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch: # Allows manual trigger
+
+env:
+  APP_NAME: mod-manager
+
+jobs:
+  build:
+    name: 🔨 Build for ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            target: x86_64-pc-windows-msvc
+            output: mod-manager.exe
+            artifact: mod-manager-windows-x64.exe
+          - os: linux
+            target: x86_64-unknown-linux-gnu
+            output: mod-manager
+            artifact: mod-manager-linux-x64
+          - os: macos
+            target: aarch64-apple-darwin
+            output: mod-manager
+            artifact: mod-manager-macos-arm64
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🦕 Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: 📋 Show Deno info
+        run: |
+          deno --version
+          echo "Building for: ${{ matrix.os }} (${{ matrix.target }})"
+
+      - name: 🔨 Build for ${{ matrix.os }}
+        run: |
+          deno compile \
+            --allow-all \
+            --target ${{ matrix.target }} \
+            --output ${{ matrix.output }} \
+            main.ts
+
+      - name: 📦 Prepare artifact
+        run: |
+          mkdir -p artifacts
+          cp ${{ matrix.output }} artifacts/${{ matrix.artifact }}
+
+          # Create info file
+          echo "# Minecraft Mod Manager" > artifacts/README.txt
+          echo "Built on: $(date)" >> artifacts/README.txt
+          echo "Target: ${{ matrix.target }}" >> artifacts/README.txt
+          echo "Version: ${GITHUB_REF#refs/tags/}" >> artifacts/README.txt
+          echo "" >> artifacts/README.txt
+          echo "Usage:" >> artifacts/README.txt
+          echo "1. Place this executable in your modpack folder" >> artifacts/README.txt
+          echo "2. Create tn.mods.json with your mod configuration" >> artifacts/README.txt
+          echo "3. Run the executable" >> artifacts/README.txt
+
+      - name: 📤 Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifacts/
+          retention-days: 7
+
+  release:
+    name: 🎉 Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📥 Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: 📋 List artifacts
+        run: |
+          echo "Available artifacts:"
+          find release-artifacts -type f -name "*" | sort
+
+      - name: 📦 Prepare release assets
+        run: |
+          mkdir -p release-assets
+
+          # Copy executables and rename for clarity
+          cp release-artifacts/mod-manager-windows-x64/mod-manager.exe release-assets/mod-manager-windows-x64.exe
+          cp release-artifacts/mod-manager-linux-x64/mod-manager release-assets/mod-manager-linux-x64
+          cp release-artifacts/mod-manager-macos-arm64/mod-manager release-assets/mod-manager-macos-arm64
+
+          # Copy README to main directory
+          cp release-artifacts/mod-manager-windows-x64/README.txt release-assets/
+
+          # Create SHA256 checksums
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+
+          echo "Release assets:"
+          ls -la release-assets/
+
+      - name: 🏷️ Extract version
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: 📝 Generate release notes
+        id: release_notes
+        run: |
+          cat << 'EOF' > release_notes.md
+          ## 🎮 Minecraft Mod Manager ${{ steps.version.outputs.version }}
+
+          **Auto-built release** - Download the version for your platform below:
+
+          ### 📦 Downloads
+
+          | Platform | Download | Architecture |
+          |----------|----------|--------------|
+          | 🪟 **Windows** | `mod-manager-windows-x64.exe` | x64 |
+          | 🐧 **Linux** | `mod-manager-linux-x64` | x64 |
+          | 🍎 **macOS** | `mod-manager-macos-arm64` | ARM64 (M1/M2) |
+
+          ### 🚀 Quick Start
+
+          1. **Download** the executable for your platform
+          2. **Place** it in your modpack folder
+          3. **Create** `tn.mods.json` with your mod configuration:
+             ```json
+             {
+               "modLoader": "fabric",
+               "gameVersion": "1.20.1",
+               "mods": [
+                 { "name": "Fabric API", "source": "modrinth" },
+                 { "name": "Sodium", "source": "modrinth" }
+               ]
+             }
+             ```
+          4. **Run** the executable (double-click or `./mod-manager`)
+
+          ### ✨ Features
+
+          - 🔍 **Smart mod search** - Just provide mod names
+          - 📦 **Auto-downloads** from Modrinth
+          - 🔄 **Auto-updates** mods to latest compatible versions
+          - 🎯 **Version management** - Fabric, Forge, NeoForge support
+          - 💾 **Single executable** - No dependencies required
+
+          ### 🛡️ Security
+
+          All binaries are built automatically using GitHub Actions. Verify integrity using `SHA256SUMS.txt`.
+
+          ### 📋 Changelog
+
+          - Built from commit: `${{ github.sha }}`
+          - Build date: `$(date -u +'%Y-%m-%d %H:%M:%S UTC')`
+
+          ---
+
+          *Built with ☕ and TypeScript. Vibe-coded because life's too short for manual mod management.*
+          EOF
+
+      - name: 🎉 Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "🎮 Mod Manager ${{ steps.version.outputs.version }}"
+          body_path: release_notes.md
+          files: |
+            release-assets/*
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: 📢 Post-release
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: 🎉 Success notification
+        run: |
+          echo "🎉 Successfully released ${{ needs.release.result }}"
+          echo "🔗 Release URL: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
