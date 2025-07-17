@@ -15,6 +15,20 @@ interface ModpackConfig {
   mods: ModConfig[];
 }
 
+interface SearchResult {
+  title: string;
+  slug: string;
+  project_id: string;
+  categories: string[];
+}
+
+interface Version {
+  game_versions: string[];
+  loaders: string[];
+  version_number: string;
+  files: { url: string; filename: string }[];
+}
+
 class ModManager {
   private config: ModpackConfig;
   private modsDir = './mods';
@@ -283,14 +297,14 @@ class ModManager {
       }
       
       // Buscar coincidencia exacta primero
-      let bestMatch = searchResults.hits.find((hit: any) => 
+      let bestMatch = searchResults.hits.find((hit: SearchResult) => 
         hit.title.toLowerCase() === modName.toLowerCase() || 
         hit.slug.toLowerCase() === modName.toLowerCase()
       );
       
       // Si no hay coincidencia exacta, buscar por similitud
       if (!bestMatch) {
-        bestMatch = searchResults.hits.find((hit: any) =>
+        bestMatch = searchResults.hits.find((hit: SearchResult) =>
           hit.title.toLowerCase().includes(modName.toLowerCase()) ||
           modName.toLowerCase().includes(hit.title.toLowerCase())
         );
@@ -330,7 +344,7 @@ class ModManager {
       
       if (mod.version) {
         // Buscar versión específica
-        compatibleVersion = versions.find((v: any) => 
+        compatibleVersion = versions.find((v: Version) => 
           v.game_versions.includes(this.config.gameVersion) &&
           v.loaders.includes(this.config.modLoader) &&
           v.version_number === mod.version
@@ -345,7 +359,7 @@ class ModManager {
           console.log(`🔍 Buscando última versión de ${mod.name} para ${this.config.modLoader} ${this.config.gameVersion}`);
         }
         
-        compatibleVersion = versions.find((v: any) => 
+        compatibleVersion = versions.find((v: Version) => 
           v.game_versions.includes(this.config.gameVersion) &&
           v.loaders.includes(this.config.modLoader)
         );
@@ -370,7 +384,7 @@ class ModManager {
     }
   }
 
-  private async getCurseForgeDownloadUrl(mod: ModConfig): Promise<string> {
+  private getCurseForgeDownloadUrl(mod: ModConfig): Promise<string> {
     // Nota: CurseForge requiere API key para acceso completo
     // Esta es una implementación simplificada
     console.log(`⚠️  CurseForge requiere configuración adicional para ${mod.name}`);
