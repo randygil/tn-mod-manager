@@ -3,7 +3,7 @@ name: 🚀 Build and Release
 on:
   push:
     tags:
-      - "v*" # Triggers on version tags like v1.0.0, v1.2.3, etc.
+      - 'v*' # Triggers on version tags like v1.0.0, v1.2.3, etc.
   workflow_dispatch: # Allows manual trigger
 
 env:
@@ -99,9 +99,9 @@ jobs:
           mkdir -p release-assets
 
           # Copy executables and rename for clarity
-          cp release-artifacts/mod-manager-windows-x64/mod-manager.exe release-assets/mod-manager-windows-x64.exe
-          cp release-artifacts/mod-manager-linux-x64/mod-manager release-assets/mod-manager-linux-x64
-          cp release-artifacts/mod-manager-macos-arm64/mod-manager release-assets/mod-manager-macos-arm64
+          cp release-artifacts/mod-manager-windows-x64.exe/mod-manager-windows-x64.exe release-assets/mod-manager-windows-x64.exe
+          cp release-artifacts/mod-manager-linux-x64/mod-manager-linux-x64 release-assets/mod-manager-linux-x64
+          cp release-artifacts/mod-manager-macos-arm64/mod-manager-macos-arm64 release-assets/mod-manager-macos-arm64
 
           # Copy README to main directory
           cp release-artifacts/mod-manager-windows-x64/README.txt release-assets/
@@ -180,7 +180,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: "🎮 Mod Manager ${{ steps.version.outputs.version }}"
+          name: '🎮 Mod Manager ${{ steps.version.outputs.version }}'
           body_path: release_notes.md
           files: |
             release-assets/*
