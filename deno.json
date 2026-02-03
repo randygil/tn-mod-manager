@@ -12,7 +12,7 @@
     "check": "deno check main.ts",
     "clean": "rm -f mod-manager mod-manager.exe release-* && rm -rf release-v*",
     "validate": "deno task lint && deno task check && deno task test",
-    "release-local": "chmod +x scripts/create-release.sh && ./scripts/create-release.sh",
+    "release-local": "scripts\\create-release.bat",
     "info": "deno info main.ts",
     "deps": "deno info --json main.ts | jq '.modules[] | select(.specifier | startswith(\"https://\")) | .specifier'",
     "setup": "echo '🦕 Deno project setup complete! Run: deno task dev'"
