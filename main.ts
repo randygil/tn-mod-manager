@@ -108,7 +108,7 @@ class ModManager {
 
     if (type === 'github') {
       if (!repo) throw new Error('Para fuente github, se requiere el campo "repo" (usuario/repositorio)');
-      configUrl = `https://raw.githubusercontent.com/${repo}/${branch}/${file}`;
+      configUrl = `https://raw.githubusercontent.com/${repo}/refs/heads/${branch}/${file}`;
     } else if (type === 'direct') {
       if (!url) throw new Error('Para fuente directa, se requiere el campo "url"');
       configUrl = url;
