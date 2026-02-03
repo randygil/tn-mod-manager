@@ -44,6 +44,17 @@ interface Version {
   files: { url: string; filename: string }[];
 }
 
+interface GitHubAsset {
+  name: string;
+  browser_download_url: string;
+  size: number;
+}
+
+interface GitHubRelease {
+  tag_name: string;
+  assets: GitHubAsset[];
+}
+
 class ModManager {
   private config: ModpackConfig;
   private modsDir = './mods';
@@ -587,7 +598,7 @@ class AutoUpdater {
     }
   }
 
-  private async getLatestRelease(): Promise<any> {
+  private async getLatestRelease(): Promise<GitHubRelease> {
     const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
     if (!response.ok) {
       throw new Error(`GitHub API Error: ${response.statusText}`);
@@ -595,7 +606,7 @@ class AutoUpdater {
     return await response.json();
   }
 
-  private getAssetForPlatform(assets: any[]): any {
+  private getAssetForPlatform(assets: GitHubAsset[]): GitHubAsset {
     const os = Deno.build.os; // windows, linux, darwin
     const arch = Deno.build.arch; // x86_64, aarch64
 
@@ -611,7 +622,7 @@ class AutoUpdater {
       throw new Error(`Plataforma no soportada para auto-update: ${os}-${arch}`);
     }
 
-    const asset = assets.find((a: any) => a.name === assetNamePattern);
+    const asset = assets.find((a) => a.name === assetNamePattern);
     if (!asset) {
       throw new Error(`Asset no encontrado para esta plataforma: ${assetNamePattern}`);
     }
@@ -619,7 +630,7 @@ class AutoUpdater {
     return asset;
   }
 
-  private async performUpdate(release: any): Promise<void> {
+  private async performUpdate(release: GitHubRelease): Promise<void> {
     const asset = this.getAssetForPlatform(release.assets);
     const execPath = Deno.execPath();
     const oldPath = `${execPath}.old`;
