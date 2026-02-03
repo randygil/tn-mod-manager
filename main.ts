@@ -3,7 +3,7 @@
 import { format, greaterThan, parse } from '@std/semver';
 import { dirname, join } from '@std/path';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.3';
 const GITHUB_REPO = 'randygil/tn-mod-manager';
 
 
@@ -656,10 +656,18 @@ class AutoUpdater {
     // 2. Renombrar actual a .old
     // En Windows no podemos borrar el ejecutable en uso, pero sí renombrarlo
     try {
+      // 2. Renombrar actual a .old
+      // Primero aseguramos que no exista un .old previo que bloquee el renombre
+      try {
+        await Deno.remove(oldPath);
+      } catch {
+        // Ignoramos si no existe o si falla (intentaremos renombrar de todos modos)
+      }
+
       await Deno.rename(execPath, oldPath);
     } catch (error) {
       await Deno.remove(tempPath); // Limpieza
-      throw new Error(`No se pudo renombrar el ejecutable actual: ${(error as Error).message}`);
+      throw new Error(`No se pudo renombrar el ejecutable actual (posiblemente bloqueado): ${(error as Error).message} - Intenta borrar manualmente el archivo .old`);
     }
 
     // 3. Mover nuevo a ubicación original
