@@ -12,7 +12,15 @@ interface ModConfig {
 interface ModpackConfig {
   modLoader: 'fabric' | 'forge' | 'neoforge';
   gameVersion: string;
+  prune?: boolean; // Por defecto true. Si es false, NO elimina mods extras.
   mods: ModConfig[];
+  externalSrc?: {
+    type: 'direct' | 'github';
+    url?: string;
+    repo?: string;
+    branch?: string;
+    file?: string;
+  };
 }
 
 interface SearchResult {
@@ -40,7 +48,7 @@ class ModManager {
 
   async init(): Promise<void> {
     console.log('🚀 Iniciando gestor de mods...');
-    
+
     try {
       await this.loadConfig();
       await this.ensureModsDirectory();
@@ -56,6 +64,11 @@ class ModManager {
     try {
       const configText = await Deno.readTextFile(this.configFile);
       this.config = JSON.parse(configText);
+
+      if (this.config.externalSrc) {
+        await this.processExternalSource();
+      }
+
       console.log(`📋 Configuración cargada: ${this.config.modLoader} ${this.config.gameVersion}`);
       console.log(`📦 Mods configurados: ${this.config.mods.length}`);
     } catch (error) {
@@ -66,6 +79,43 @@ class ModManager {
         Deno.exit(0);
       }
       throw error;
+    }
+  }
+
+  private async processExternalSource(): Promise<void> {
+    const { type, url, repo, branch = 'main', file = 'tn.mods.json' } = this.config.externalSrc!;
+
+    console.log(`\n🌐 Fuente externa detectada: ${type}`);
+    let configUrl: string;
+
+    if (type === 'github') {
+      if (!repo) throw new Error('Para fuente github, se requiere el campo "repo" (usuario/repositorio)');
+      configUrl = `https://raw.githubusercontent.com/${repo}/${branch}/${file}`;
+    } else if (type === 'direct') {
+      if (!url) throw new Error('Para fuente directa, se requiere el campo "url"');
+      configUrl = url;
+    } else {
+      throw new Error(`Tipo de fuente externa no soportada: ${type}`);
+    }
+
+    try {
+      console.log(`📥 Descargando configuración de: ${configUrl}`);
+      const response = await fetch(configUrl);
+      if (!response.ok) throw new Error(`Error HTTP ${response.status} - ${response.statusText}`);
+      const externalConfig = await response.json();
+
+      if (!externalConfig.mods) throw new Error('El JSON externo no contiene una lista de mods válida');
+
+      this.config = {
+        ...this.config,
+        ...externalConfig,
+        externalSrc: this.config.externalSrc
+      };
+
+      console.log('✅ Configuración externa aplicada');
+    } catch (error) {
+      console.error(`❌ Error cargando configuración externa: ${(error as Error).message}`);
+      console.log('⚠️  Usando configuración local...\n');
     }
   }
 
@@ -134,18 +184,22 @@ class ModManager {
     console.log(`\n🔍 Mods actuales: ${currentMods.length}`);
     console.log(`🎯 Mods requeridos: ${this.config.mods.length}`);
 
-    // Eliminar mods no especificados en la configuración
-    // Para esto, necesitamos ser más inteligentes ya que los nombres pueden cambiar
-    const configModNames = this.config.mods.map(mod => 
-      mod.name.toLowerCase().replace(/\s+/g, '-')
-    );
+    // Eliminar mods no listados por defecto, a menos que se deshabilite explícitamente
+    if (this.config.prune !== false) {
+      console.log('🧹 Limpieza activa: buscando archivos no listados...');
+      const configModNames = this.config.mods.map(mod =>
+        mod.name.toLowerCase().replace(/\s+/g, '-')
+      );
 
-    for (const currentMod of currentMods) {
-      const modBaseName = this.extractModBaseName(currentMod);
-      if (!configModNames.some(configName => modBaseName.includes(configName))) {
-        console.log(`🗑️  Eliminando: ${currentMod}`);
-        await Deno.remove(`${this.modsDir}/${currentMod}`);
+      for (const currentMod of currentMods) {
+        const modBaseName = this.extractModBaseName(currentMod);
+        if (!configModNames.some(configName => modBaseName.includes(configName))) {
+          console.log(`🗑️  Eliminando mod no listado: ${currentMod}`);
+          await Deno.remove(`${this.modsDir}/${currentMod}`);
+        }
       }
+    } else {
+      console.log('🛡️  Modo seguro: Conservando mods no listados');
     }
 
     // Descargar mods faltantes o verificar existentes
@@ -160,66 +214,82 @@ class ModManager {
   }
 
   private async processModDownload(mod: ModConfig, currentMods: string[]): Promise<void> {
-    if (mod.source === 'modrinth' && !mod.version) {
-      // Para mods de Modrinth sin versión específica, necesitamos verificar si existe
-      const modBaseName = mod.name.toLowerCase().replace(/\s+/g, '-');
-      const existingMod = currentMods.find(current => 
-        this.extractModBaseName(current).includes(modBaseName)
-      );
+    let expectedFileName: string;
+    let downloadUrl: string;
+    let versionDisplay: string;
 
-      if (existingMod) {
-        console.log(`✅ Ya existe: ${mod.name} (${existingMod})`);
-        console.log(`🔍 Verificando si hay actualizaciones disponibles...`);
-        
-        try {
-          // Obtener información de la última versión UNA SOLA VEZ
-          const modrinthInfo = await this.getModrinthDownloadUrl(mod, false); // false = no mostrar mensaje de búsqueda
-          const expectedFileName = modrinthInfo.fileName;
-          
-          if (existingMod !== expectedFileName) {
-            console.log(`🔄 Actualizando: ${existingMod} → ${expectedFileName}`);
-            await Deno.remove(`${this.modsDir}/${existingMod}`);
-            // Descargar directamente con la información ya obtenida
-            await this.downloadFile(modrinthInfo.url, `${this.modsDir}/${expectedFileName}`);
-            await this.validateJarFile(`${this.modsDir}/${expectedFileName}`);
-            console.log(`✅ Actualizado: ${mod.name} v${modrinthInfo.version}`);
-          } else {
-            console.log(`✅ ${mod.name} está actualizado (v${modrinthInfo.version})`);
-          }
-        } catch (error) {
-          console.log(`⚠️  Error verificando actualizaciones para ${mod.name}: ${(error as Error).message}`);
-        }
+    try {
+      // 1. Resolver qué archivo necesitamos (Target)
+      if (mod.source === 'modrinth') {
+        // Siempre consultamos Modrinth para saber cuál es la versión correcta/última
+        // Esto es necesario para poder comparar con lo que tenemos instalado
+        const showMessage = !mod.version; // Solo mostramos 'Buscando' si es autodiscovery
+        const info = await this.getModrinthDownloadUrl(mod, showMessage);
+
+        expectedFileName = info.fileName;
+        downloadUrl = info.url;
+        versionDisplay = info.version;
+      } else if (mod.source === 'curseforge') {
+        // Esta implementación falla actualmente, pero mantenemos la estructura
+        downloadUrl = await this.getCurseForgeDownloadUrl(mod);
+        expectedFileName = mod.fileName || this.generateFileName(mod);
+        versionDisplay = mod.version || 'latest';
       } else {
-        // Mod no existe, descargar
+        // Generic URL
+        if (!mod.downloadUrl && mod.source === 'url') {
+          throw new Error('source: "url" requiere "downloadUrl"');
+        }
+        downloadUrl = mod.downloadUrl || '';
+        expectedFileName = mod.fileName || this.generateFileName(mod);
+        versionDisplay = mod.version || 'custom';
+      }
+
+      // 2. Limpiar versiones antiguas/incorrectas DE ESTE MOD ESPECÍFICO
+      // Esto funciona independientemente de si 'prune' está activo para el resto de archivos
+      const modBaseNameSearch = mod.name.toLowerCase().replace(/\s+/g, '-');
+
+      const duplicates = currentMods.filter(current => {
+        const currentBase = this.extractModBaseName(current);
+        // Usamos startsWith para identificar variantes de version del mismo mod
+        return currentBase.startsWith(modBaseNameSearch) && current !== expectedFileName;
+      });
+
+      for (const file of duplicates) {
+        console.log(`🧹 Eliminando versión antigua/incorrecta: ${file}`);
         try {
-          console.log(`⬇️  Descargando: ${mod.name} (última versión compatible)`);
-          const modrinthInfo = await this.getModrinthDownloadUrl(mod, true); // true = mostrar mensaje de búsqueda
-          const filePath = `${this.modsDir}/${modrinthInfo.fileName}`;
-          await this.downloadFile(modrinthInfo.url, filePath);
-          await this.validateJarFile(filePath);
-          console.log(`✅ Descargado: ${mod.name} v${modrinthInfo.version}`);
-        } catch (error) {
-          console.log(`❌ Error descargando ${mod.name}: ${(error as Error).message}`);
+          await Deno.remove(`${this.modsDir}/${file}`);
+        } catch (e) {
+          console.log(`⚠️  No se pudo eliminar ${file}: ${(e as Error).message}`);
         }
       }
-    } else {
-      // Para mods con versión específica o otras fuentes
-      const fileName = mod.fileName || this.generateFileName(mod);
-      const filePath = `${this.modsDir}/${fileName}`;
-      
+
+      // 3. Asegurar que el archivo deseado existe
+      const targetPath = `${this.modsDir}/${expectedFileName}`;
+
       try {
-        await Deno.stat(filePath);
-        console.log(`✅ Ya existe: ${mod.name}`);
+        await Deno.stat(targetPath);
+        // Si existe, verificamos que no esté corrupto (chequeo rápido de tamaño > 0)
+        if ((await Deno.stat(targetPath)).size > 0) {
+          console.log(`✅ Verificado: ${mod.name} ${mod.version ? '(v' + mod.version + ')' : '(v' + versionDisplay + ')'}`);
+          return;
+        }
       } catch {
-        console.log(`⬇️  Descargando: ${mod.name} v${mod.version || 'latest'}`);
-        await this.downloadMod(mod, filePath);
+        // No existe (stat falló), continuamos a descarga
       }
+
+      console.log(`⬇️  Descargando: ${mod.name} (v${versionDisplay})`);
+      await this.downloadFile(downloadUrl!, targetPath);
+      await this.validateJarFile(targetPath);
+      console.log(`✅ Instalado: ${expectedFileName}`);
+
+    } catch (error) {
+      console.log(`❌ Error procesando ${mod.name}: ${(error as Error).message}`);
     }
   }
 
   private generateFileName(mod: ModConfig): string {
     if (mod.fileName) return mod.fileName;
-    
+
     const sanitizedName = mod.name.replace(/\s+/g, '-').toLowerCase();
     const version = mod.version || 'latest';
     return `${sanitizedName}-${version}.jar`;
@@ -246,10 +316,10 @@ class ModManager {
       }
 
       await this.downloadFile(downloadUrl, filePath);
-      
+
       // Verificar que el archivo descargado es válido
       await this.validateJarFile(filePath);
-      
+
       console.log(`✅ Descargado: ${mod.name}`);
     } catch (error) {
       // Limpiar archivo parcial si existe
@@ -268,13 +338,13 @@ class ModManager {
       if (stat.size === 0) {
         throw new Error('Archivo vacío');
       }
-      
+
       // Verificar que es un archivo ZIP/JAR válido leyendo los primeros bytes
       const file = await Deno.open(filePath, { read: true });
       const buffer = new Uint8Array(4);
       await file.read(buffer);
       file.close();
-      
+
       // Signature para archivos ZIP/JAR: 50 4B 03 04
       if (buffer[0] !== 0x50 || buffer[1] !== 0x4B || buffer[2] !== 0x03 || buffer[3] !== 0x04) {
         throw new Error('No es un archivo JAR válido');
@@ -287,21 +357,21 @@ class ModManager {
   private async searchModrinthProject(modName: string): Promise<string> {
     try {
       console.log(`🔍 Buscando proyecto "${modName}" en Modrinth...`);
-      
+
       const searchUrl = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(modName)}&facets=[["categories:${this.config.modLoader}"],["versions:${this.config.gameVersion}"]]&limit=10`;
       const response = await fetch(searchUrl);
       const searchResults = await response.json();
-      
+
       if (!searchResults.hits || searchResults.hits.length === 0) {
         throw new Error(`No se encontraron proyectos para "${modName}"`);
       }
-      
+
       // Buscar coincidencia exacta primero
-      let bestMatch = searchResults.hits.find((hit: SearchResult) => 
-        hit.title.toLowerCase() === modName.toLowerCase() || 
+      let bestMatch = searchResults.hits.find((hit: SearchResult) =>
+        hit.title.toLowerCase() === modName.toLowerCase() ||
         hit.slug.toLowerCase() === modName.toLowerCase()
       );
-      
+
       // Si no hay coincidencia exacta, buscar por similitud
       if (!bestMatch) {
         bestMatch = searchResults.hits.find((hit: SearchResult) =>
@@ -309,19 +379,19 @@ class ModManager {
           modName.toLowerCase().includes(hit.title.toLowerCase())
         );
       }
-      
+
       // Si aún no hay match, tomar el más popular
       if (!bestMatch) {
         bestMatch = searchResults.hits[0];
       }
-      
+
       console.log(`✅ Proyecto encontrado: "${bestMatch.title}" (${bestMatch.project_id})`);
-      
+
       // Verificar que el proyecto es compatible
       if (!bestMatch.categories.includes(this.config.modLoader)) {
         console.log(`⚠️  Advertencia: "${bestMatch.title}" podría no ser compatible con ${this.config.modLoader}`);
       }
-      
+
       return bestMatch.project_id;
     } catch (error) {
       throw new Error(`Error buscando proyecto en Modrinth: ${(error as Error).message}`);
@@ -331,43 +401,55 @@ class ModManager {
   private async getModrinthDownloadUrl(mod: ModConfig, showSearchMessage: boolean = true): Promise<{ url: string; version: string; fileName: string }> {
     try {
       let projectId = mod.projectId;
-      
+
       // Si no hay projectId, buscarlo
       if (!projectId) {
         projectId = await this.searchModrinthProject(mod.name);
       }
-      
+
       const response = await fetch(`https://api.modrinth.com/v2/project/${projectId}/version`);
       const versions = await response.json();
-      
+
       let compatibleVersion;
-      
+
       if (mod.version) {
-        // Buscar versión específica
-        compatibleVersion = versions.find((v: Version) => 
+        // 1. Búsqueda exacta
+        compatibleVersion = versions.find((v: Version) =>
           v.game_versions.includes(this.config.gameVersion) &&
           v.loaders.includes(this.config.modLoader) &&
           v.version_number === mod.version
         );
-        
+
+        // 2. Búsqueda flexible (ej: usuario pide "1.5.0", modrinth tiene "v1.5.0")
         if (!compatibleVersion) {
-          throw new Error(`Versión específica ${mod.version} no encontrada o no compatible`);
+          compatibleVersion = versions.find((v: Version) =>
+            v.game_versions.includes(this.config.gameVersion) &&
+            v.loaders.includes(this.config.modLoader) &&
+            (v.version_number === `v${mod.version}` ||
+              v.version_number.replace(/^v/, '') === mod.version)
+          );
         }
+
+        if (!compatibleVersion) {
+          throw new Error(`Versión específica "${mod.version}" no encontrada para ${this.config.gameVersion} (${this.config.modLoader})`);
+        }
+
+        console.log(`✅ Versión específica encontrada: ${compatibleVersion.version_number}`);
       } else {
         // Buscar la versión más reciente compatible
         if (showSearchMessage) {
           console.log(`🔍 Buscando última versión de ${mod.name} para ${this.config.modLoader} ${this.config.gameVersion}`);
         }
-        
-        compatibleVersion = versions.find((v: Version) => 
+
+        compatibleVersion = versions.find((v: Version) =>
           v.game_versions.includes(this.config.gameVersion) &&
           v.loaders.includes(this.config.modLoader)
         );
-        
+
         if (!compatibleVersion) {
           throw new Error(`No se encontró ninguna versión compatible para ${this.config.modLoader} ${this.config.gameVersion}`);
         }
-        
+
         if (showSearchMessage) {
           console.log(`✅ Última versión encontrada: ${compatibleVersion.version_number}`);
         }
@@ -399,10 +481,10 @@ class ModManager {
 
     const contentLength = response.headers.get('content-length');
     const total = contentLength ? parseInt(contentLength, 10) : 0;
-    
+
     const file = await Deno.open(filePath, { create: true, write: true });
     const reader = response.body?.getReader();
-    
+
     if (!reader) {
       throw new Error('No se pudo leer el contenido de la descarga');
     }
@@ -447,12 +529,12 @@ class ModManager {
 async function main() {
   const manager = new ModManager();
   await manager.init();
-  
+
   console.log('\n🎮 Presiona Enter para cerrar...');
   await new Promise<void>((resolve) => {
     const decoder = new TextDecoder();
     const buffer = new Uint8Array(1024);
-    
+
     Deno.stdin.read(buffer).then(() => {
       resolve();
     });

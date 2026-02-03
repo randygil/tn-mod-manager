@@ -112,16 +112,18 @@ chmod +x build-wsl.sh
 ```
 *Skips search, uses specific Project ID for faster downloads*
 
-### 🎯 Specific version
+### 🔒 Locking Versions (Specific Version)
+Use the `version` field to install a specific version of a mod.
+The manager will fuzzy-match versions (e.g. `1.0.0` matches `v1.0.0`).
+
 ```json
 {
   "name": "Sodium",
-  "version": "0.5.3",
-  "source": "modrinth",
-  "projectId": "AANobbMI"
+  "version": "mc1.20.1-0.5.3", // Exact version number from Modrinth
+  "source": "modrinth"
 }
 ```
-*Locks to exact version - won't auto-update*
+*Note: This locks the mod to this version and prevents auto-updates.*
 
 ### 🌐 Custom URL
 ```json
@@ -133,6 +135,47 @@ chmod +x build-wsl.sh
   "fileName": "custom-mod-1.0.0.jar"
 }
 ```
+
+### 🧹 automatic Cleanup (Prune)
+By default, the manager **removes** mods that are not in your list to keep the folder synced.
+To **disable** this behavior (Safe Mode), set `"prune": false`.
+
+```json
+{
+  "modLoader": "fabric",
+  "gameVersion": "1.20.1",
+  "prune": false,  // Disable deletion of unlisted mods
+  "mods": [ ... ]
+}
+```
+
+### 📡 External Source (Remote Config)
+Control your modpack from a remote JSON file. Useful for team sync.
+
+**From GitHub:**
+```json
+{
+  // ... other settings
+  "externalSrc": {
+    "type": "github",
+    "repo": "username/repo",
+    "branch": "main",      // Optional
+    "file": "tn.mods.json" // Optional
+  }
+}
+```
+
+**From Direct URL:**
+```json
+{
+  // ... other settings
+  "externalSrc": {
+    "type": "direct",
+    "url": "https://example.com/mods.json"
+  }
+}
+```
+*Note: The remote JSON replaces the local mod list.*
 
 ## 🧠 Smart Search Algorithm
 
