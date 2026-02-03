@@ -22,7 +22,7 @@ jobs:
       - name: 🦕 Setup Deno
         uses: denoland/setup-deno@v1
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: 🔍 Lint code
         run: deno lint
@@ -45,7 +45,7 @@ jobs:
       - name: 🦕 Setup Deno
         uses: denoland/setup-deno@v1
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: ✅ Validate deno.json
         run: |
@@ -67,7 +67,7 @@ jobs:
       - name: 🦕 Setup Deno
         uses: denoland/setup-deno@v1
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: 🛡️ Security audit
         run: |

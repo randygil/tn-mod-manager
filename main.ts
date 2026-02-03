@@ -1,5 +1,12 @@
 #!/usr/bin/env -S deno run --allow-all
 
+import { format, greaterThan, parse } from '@std/semver';
+import { dirname, join } from '@std/path';
+
+const APP_VERSION = '1.0.1';
+const GITHUB_REPO = 'randygil/tn-mod-manager';
+
+
 interface ModConfig {
   name: string;
   version?: string; // Opcional - si no se especifica, busca la última compatible
@@ -525,8 +532,157 @@ class ModManager {
   }
 }
 
+class AutoUpdater {
+  private isDev: boolean;
+
+  constructor() {
+    // Detectamos si estamos en desarrollo buscando "deno" en el ejecutable
+    // o si el script se está ejecutando directamente
+    this.isDev = Deno.execPath().includes('deno');
+  }
+
+  async check(): Promise<void> {
+    // 1. Limpiar versiones antiguas (.old) si existen
+    await this.cleanupOldVersions();
+
+    if (this.isDev) {
+      console.log('🛠️  Modo desarrollo: Saltando verificación de auto-update');
+      return;
+    }
+
+    try {
+      console.log('🔄 Buscando actualizaciones...');
+      const latest = await this.getLatestRelease();
+      const currentVer = parse(APP_VERSION);
+      const latestVer = parse(latest.tag_name);
+
+      if (greaterThan(latestVer, currentVer)) {
+        console.log(`✨ Nueva versión disponible: ${latest.tag_name} (actual: v${APP_VERSION})`);
+        await this.performUpdate(latest);
+      } else {
+        console.log('✅ Tu versión está actualizada');
+      }
+    } catch (error) {
+      // Si falla el update, solo logueamos y dejamos que el programa continúe
+      console.error('⚠️  Error verificando actualizaciones:', (error as Error).message);
+    }
+  }
+
+  private async cleanupOldVersions(): Promise<void> {
+    try {
+      const execPath = Deno.execPath();
+      const oldPath = `${execPath}.old`;
+
+      // Intentar borrar .old si existe
+      try {
+        await Deno.remove(oldPath);
+        // console.log("🧹 Limpieza: Versión antigua eliminada");
+      } catch (error) {
+        if (!(error instanceof Deno.errors.NotFound)) {
+          // Ignorar silenciosamente si no se puede borrar (tal vez bloqueado)
+        }
+      }
+    } catch {
+      // Ignorar errores generales de limpieza
+    }
+  }
+
+  private async getLatestRelease(): Promise<any> {
+    const response = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+    if (!response.ok) {
+      throw new Error(`GitHub API Error: ${response.statusText}`);
+    }
+    return await response.json();
+  }
+
+  private getAssetForPlatform(assets: any[]): any {
+    const os = Deno.build.os; // windows, linux, darwin
+    const arch = Deno.build.arch; // x86_64, aarch64
+
+    let assetNamePattern = '';
+
+    if (os === 'windows' && arch === 'x86_64') {
+      assetNamePattern = 'mod-manager-windows-x64.exe';
+    } else if (os === 'linux' && arch === 'x86_64') {
+      assetNamePattern = 'mod-manager-linux-x64';
+    } else if (os === 'darwin' && arch === 'aarch64') {
+      assetNamePattern = 'mod-manager-macos-arm64';
+    } else {
+      throw new Error(`Plataforma no soportada para auto-update: ${os}-${arch}`);
+    }
+
+    const asset = assets.find((a: any) => a.name === assetNamePattern);
+    if (!asset) {
+      throw new Error(`Asset no encontrado para esta plataforma: ${assetNamePattern}`);
+    }
+
+    return asset;
+  }
+
+  private async performUpdate(release: any): Promise<void> {
+    const asset = this.getAssetForPlatform(release.assets);
+    const execPath = Deno.execPath();
+    const oldPath = `${execPath}.old`;
+
+    console.log(`⬇️  Descargando actualización: ${asset.name}`);
+    console.log(`📦 Tamaño: ${(asset.size / 1024 / 1024).toFixed(2)} MB`);
+
+    // 1. Descargar nueva versión a un archivo temporal
+    const tempPath = `${execPath}.new`;
+
+    // Descargar
+    const response = await fetch(asset.browser_download_url);
+    if (!response.ok) throw new Error('Error descargando update');
+
+    const file = await Deno.open(tempPath, { create: true, write: true });
+    await response.body?.pipeTo(file.writable);
+
+    // Asegurar permisos en Unix
+    if (Deno.build.os !== 'windows') {
+      await Deno.chmod(tempPath, 0o755);
+    }
+
+    // 2. Renombrar actual a .old
+    // En Windows no podemos borrar el ejecutable en uso, pero sí renombrarlo
+    try {
+      await Deno.rename(execPath, oldPath);
+    } catch (error) {
+      await Deno.remove(tempPath); // Limpieza
+      throw new Error(`No se pudo renombrar el ejecutable actual: ${(error as Error).message}`);
+    }
+
+    // 3. Mover nuevo a ubicación original
+    try {
+      await Deno.rename(tempPath, execPath);
+    } catch (error) {
+      // Intentar revertir
+      await Deno.rename(oldPath, execPath);
+      throw new Error(`Error aplicando actualización: ${(error as Error).message}`);
+    }
+
+    console.log('🚀 Actualización exitosa! Reiniciando...');
+
+    // 4. Reiniciar proceso
+    const command = new Deno.Command(execPath, {
+      args: Deno.args,
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+    });
+
+    const child = command.spawn();
+    // Salimos del proceso actual, el hijo toma el control
+    Deno.exit((await child.status).code);
+  }
+}
+
+
 // Función principal
 async function main() {
+  // Autoupdate check
+  const updater = new AutoUpdater();
+  await updater.check();
+
   const manager = new ModManager();
   await manager.init();
 

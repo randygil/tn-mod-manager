@@ -1,10 +1,31 @@
 {
-  "modLoader": "forge",
-  "gameVersion": "1.20.1",
+  "modLoader": "fabric",
+  "gameVersion": "1.21.1",
+  "prune": false,
   "mods": [
     {
-      "name": "Quark",
+      "name": "simple-voice-chat",
       "source": "modrinth"
+    },
+    {
+      "name": "Cobblemon Spawn Notification",
+      "source": "modrinth",
+      "version": "1.7.1-fabric-2.2.2"
+    },
+    {
+      "name": "Cobblemon: Legendary Monuments",
+      "source": "modrinth",
+      "version": "7.8"
+    },
+    {
+      "name": "TerraBlender",
+      "source": "modrinth",
+      "version": "4.1.0.8"
+    },
+    {
+      "name": "Chipped",
+      "source": "modrinth",
+      "version": "4.0.2"
     }
   ]
 }
